@@ -11,6 +11,7 @@ class BilingualDataset(Dataset):
         self.tokenizer_tgt = tokenizer_tgt
         self.src_lang = sr_lang
         self.tgt_lang = tgt_lang
+        self.seq_len = seq_len
 
         #create tensors
         self.sos_token = torch.Tensor([tokenizer_src.token_to_id["[SOS]"]], dtype = torch.int64)
@@ -27,6 +28,45 @@ class BilingualDataset(Dataset):
         dec_input_tokens = self.tokenizer_tgt.encode(src_text).ids
         enc_num_padding_tokens = self.seq_len - len(enc_input_tokens) -2
         dec_num_padding_tokens = self.seq_len - len(dec_input_tokens) -1
+
+        if enc_num_padding_tokens < 0 or dec_num_padding_tokens <0:
+            raise ValueError("sentence is too long")
+        
+        # Add SOS and EOS to the source text
+        encoder_input = torch.cat(
+            [
+                self.sos_token,
+                torch.tensor(enc_input_tokens, dtype= torch.int64),
+                self.eos_token,
+                torch.tensor([self.pad_token]) * enc_num_padding_tokens
+            ]
+        )
+        # Add SOS to the decoder input
+        decoder_input = torch.cat([
+            self.sos_token,
+            torch.tensor(dec_input_tokens, dtype= torch.int64),
+            torch.tensor([self.pad_token]) * dec_num_padding_tokens
+        ])
+        # Add ESO to the label, expected output
+        label = torch.cat([
+            torch.tensor(dec_input_tokens, dtype=torch.int64),
+            self.eos_token,
+            torch.tensor([self.pad_token]) * dec_num_padding_tokens
+        ])
+
+        assert encoder_input.size(0) == self.seq_len
+        assert decoder_input.size(0) == self.seq_len
+        assert label.size(0) == self.seq_len
+
+        return {
+            "encoder_input":  encoder_input,# (seq_len)
+            "decoder_input":  decoder_input, # (seq_len)
+            "encdoer_mask": (encoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int(),#(1,1, seq_len)
+            "decoder_mask": (encoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int()\
+                & causal_mask(decoder_input.size(0)) # (1,seq_len) &(1, seq_len, seq_len)
+
+
+        }
 
 
 
